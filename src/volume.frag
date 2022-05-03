@@ -62,7 +62,7 @@ void main(void)
     for (float t = t_hit.x; t < t_hit.y; t += dt) {
         float val = texture(volume, p).r;
         // TODO: Take value thresholds as parameters like webgl-neuron
-        if (val > 0.08) {
+        if (val > 0.025) {
             vec4 val_color = vec4(texture(colormap, vec2(val, 0.5)).rgb, val);
             // Opacity correction
             //val_color.a = 1.0 - pow(1.0 - val_color.a, dt_scale);
