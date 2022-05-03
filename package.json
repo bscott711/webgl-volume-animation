@@ -1,24 +1,25 @@
 {
-  "name": "webgpu-webpack-starter",
+  "name": "webgl-volume-animation",
   "version": "1.0.0",
-  "description": "A starter template for WebGPU development the uses webpack to build the code and manage dependencies.",
+  "description": "Fantastic volumetric projection animation package developed by Will Usher. Forked to make modifications to frame rate and intensity sliders.",
   "main": "app.js",
   "scripts": {
-    "build": "webpack",
+    "build": "webpack --mode=production",
     "serve": "webpack server",
-    "deploy": "webpack --mode=production"
+    "deploy": "webpack --mode=production",
+    "start": "webpack-dev-server --port 8081"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Twinklebear/webgpu-webpack-starter.git"
+    "url": "git+https://github.com/Twinklebear/webgl-volume-animation.git"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/Twinklebear/webgpu-webpack-starter/issues"
+    "url": "https://github.com/Twinklebear/webgl-volume-animation/issues"
   },
-  "homepage": "https://github.com/Twinklebear/webgpu-webpack-starter#readme",
+  "homepage": "https://github.com/Twinklebear/webgl-volume-animation#readme",
   "devDependencies": {
     "html-webpack-plugin": "^5.3.2",
     "webpack": "^5.53.0",
