@@ -6,6 +6,9 @@ precision highp float;
 uniform ivec3 volume_dims;
 uniform highp sampler2D colormap;
 uniform highp sampler3D volume;
+uniform vec2 value_range;
+uniform float threshold;
+uniform float saturation_threshold;
 
 in vec3 vray_dir;
 flat in vec3 transformed_eye;
@@ -62,15 +65,20 @@ void main(void)
     for (float t = t_hit.x; t < t_hit.y; t += dt) {
         float val = texture(volume, p).r;
         // TODO: Take value thresholds as parameters like webgl-neuron
-        if (val > 0.025) {
+        val = (val - value_range.x) / (value_range.y - value_range.x);
+        if (val >= saturation_threshold) {
+            val = 1.0;
+        }
+        if (val >= threshold) {
+            val = clamp((val - threshold) / (1.0 - threshold), 0.0, 1.0);
             vec4 val_color = vec4(texture(colormap, vec2(val, 0.5)).rgb, val);
             // Opacity correction
             //val_color.a = 1.0 - pow(1.0 - val_color.a, dt_scale);
             color.rgb += (1.0 - color.a) * val_color.a * val_color.rgb;
             color.a += (1.0 - color.a) * val_color.a;
-        }
-        if (color.a >= 0.95) {
-            break;
+            if (color.a >= 0.95) {
+                break;
+            }
         }
         p += ray_dir * dt;
     }

@@ -1,9 +1,9 @@
-import {ArcballCamera} from "arcball_camera";
-import {Controller} from "ez_canvas_controller";
-import {mat4, vec3} from "gl-matrix";
+import { ArcballCamera } from "arcball_camera";
+import { Controller } from "ez_canvas_controller";
+import { mat4, vec3 } from "gl-matrix";
 import JSZip from "jszip";
-import {colormaps} from "./colormaps";
-import {Shader} from "./shader";
+import { colormaps } from "./colormaps";
+import { Shader } from "./shader";
 import fragmentSrc from "./volume.frag";
 import vertexSrc from "./volume.vert";
 
@@ -16,9 +16,10 @@ const defaultCenter = vec3.set(vec3.create(), 0.5, 0.5, 0.5);
 const defaultUp = vec3.set(vec3.create(), 0.0, 1.0, 0.0);
 
 var gl = null;
-var volumeTexture = null;
+// var volumeTexture = null;
 var timesteps = [];
 var volumeDims = [0, 0, 0];
+var volValueRange = [0, 1];
 
 (async () => {
     var canvas = document.getElementById("webgl-canvas");
@@ -40,7 +41,7 @@ var volumeDims = [0, 0, 0];
 
     // Register mouse and touch listeners
     var controller = new Controller();
-    controller.mousemove = function(prev, cur, evt) {
+    controller.mousemove = function (prev, cur, evt) {
         if (evt.buttons == 1) {
             camera.rotate(prev, cur);
 
@@ -48,11 +49,11 @@ var volumeDims = [0, 0, 0];
             camera.pan([cur[0] - prev[0], prev[1] - cur[1]]);
         }
     };
-    controller.wheel = function(amt) {
+    controller.wheel = function (amt) {
         camera.zoom(amt);
     };
     controller.pinch = controller.wheel;
-    controller.twoFingerDrag = function(drag) {
+    controller.twoFingerDrag = function (drag) {
         camera.pan(drag);
     };
     controller.registerForCanvas(canvas);
@@ -90,17 +91,17 @@ var volumeDims = [0, 0, 0];
         await colormapImage.decode();
         var bitmap = await createImageBitmap(colormapImage);
         gl.texImage2D(gl.TEXTURE_2D,
-                      0,
-                      gl.RGBA8,
-                      colormapImage.width,
-                      colormapImage.height,
-                      0,
-                      gl.RGBA,
-                      gl.UNSIGNED_BYTE,
-                      bitmap);
+            0,
+            gl.RGBA8,
+            colormapImage.width,
+            colormapImage.height,
+            0,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            bitmap);
     }
 
-    var animationFrame = function() {
+    var animationFrame = function () {
         var resolve = null;
         var promise = new Promise(r => resolve = r);
         window.requestAnimationFrame(resolve);
@@ -128,13 +129,16 @@ var volumeDims = [0, 0, 0];
         gl.uniform3fv(shader.uniforms["eye_pos"], eye);
 
         if (frame % 6 == 0) {
-            console.log(`frame = ${frame}, tstep = ${tstep}, # loaded = ${timesteps.length}`);
+            //console.log(`frame = ${frame}, tstep = ${tstep}, # loaded = ${timesteps.length}`);
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_3D, timesteps[tstep]);
             tstep = (tstep + 1) % timesteps.length;
         }
         gl.uniform1i(shader.uniforms["volume"], 0);
         gl.uniform1i(shader.uniforms["colormap"], 1);
+        gl.uniform2fv(shader.uniforms["value_range"], volValueRange);
+        gl.uniform1f(shader.uniforms["threshold"], volumeThreshold.value);
+        gl.uniform1f(shader.uniforms["saturation_threshold"], saturationThreshold.value);
 
         var longestAxis = Math.max(volumeDims[0], Math.max(volumeDims[1], volumeDims[2]));
         var volumeScale = [
@@ -153,8 +157,7 @@ var volumeDims = [0, 0, 0];
     }
 })();
 
-async function uploadZip(evt)
-{
+async function uploadZip(evt) {
     // Delete the old time series
     if (timesteps.length > 0) {
         var oldTimesteps = timesteps;
@@ -174,7 +177,7 @@ async function uploadZip(evt)
     // Here we'd want something more intelligent to load on demand and play though
     // the textures, but this is fine for a test
     for (var f = 0; f < files.length; ++f) {
-        console.log(files[f]);
+        //console.log(files[f]);
         var start = performance.now();
         var zip = await JSZip.loadAsync(files[f]);
         var slices = zip.file(/\.webp/);
@@ -185,7 +188,7 @@ async function uploadZip(evt)
         var img = await createImageBitmap(blob);
 
         volumeDims = [img.width, img.height, slices.length];
-        console.log(volumeDims);
+        //console.log(volumeDims);
 
         var uploadTexture = gl.createTexture();
         // Upload on texture unit 2
@@ -201,33 +204,33 @@ async function uploadZip(evt)
 
         // Write the first slice, since we've already loaded it
         gl.texSubImage3D(gl.TEXTURE_3D,
-                         0,
-                         0,
-                         0,
-                         0,
-                         volumeDims[0],
-                         volumeDims[1],
-                         1,
-                         gl.RED,
-                         gl.UNSIGNED_BYTE,
-                         img);
+            0,
+            0,
+            0,
+            0,
+            volumeDims[0],
+            volumeDims[1],
+            1,
+            gl.RED,
+            gl.UNSIGNED_BYTE,
+            img);
 
-        var uploadSlice = async function(i) {
+        var uploadSlice = async function (i) {
             var buf = await slices[i].async("arraybuffer");
             var blob = new Blob([buf], ["image/webp"]);
             var img = await createImageBitmap(blob);
             gl.activeTexture(gl.TEXTURE2);
             gl.texSubImage3D(gl.TEXTURE_3D,
-                             0,
-                             0,
-                             0,
-                             i,
-                             volumeDims[0],
-                             volumeDims[1],
-                             1,
-                             gl.RED,
-                             gl.UNSIGNED_BYTE,
-                             img);
+                0,
+                0,
+                0,
+                i,
+                volumeDims[0],
+                volumeDims[1],
+                1,
+                gl.RED,
+                gl.UNSIGNED_BYTE,
+                img);
             img.close();
         };
 
