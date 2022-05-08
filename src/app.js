@@ -1,11 +1,12 @@
 import { ArcballCamera } from "arcball_camera";
 import { Controller } from "ez_canvas_controller";
 import { mat4, vec3 } from "gl-matrix";
-import JSZip from "jszip";
+
 import { colormaps } from "./colormaps";
 import { Shader } from "./shader";
 import fragmentSrc from "./volume.frag";
 import vertexSrc from "./volume.vert";
+import { ZipStack } from "./zipstack";
 
 const cubeStrip = [
     1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0,
@@ -16,9 +17,10 @@ const defaultCenter = vec3.set(vec3.create(), 0.5, 0.5, 0.5);
 const defaultUp = vec3.set(vec3.create(), 0.0, 1.0, 0.0);
 
 var gl = null;
-// var volumeTexture = null;
 var timesteps = [];
-var volumeDims = [0, 0, 0];
+var frame = 1;
+var playing = true;
+var timestepSlider = document.getElementById("timestep-slider");
 var volValueRange = [0, 1];
 
 (async () => {
@@ -30,7 +32,33 @@ var volValueRange = [0, 1];
         return;
     }
 
-    document.getElementById("upload-zip").onchange = uploadZip;
+    document.getElementById("upload-zip").onchange = loadZipFile;
+
+    setupPlaybackControls();
+
+    // Decode any URL parameters
+    if (window.location.hash) {
+        // var regexResolution = /(\d+)x(\d+)/;
+        // var regexVoxelSpacing = /(\d+\.?\d?)x(\d+\.?\d?)x(\d+\.?\d?)/;
+        var urlParams = window.location.hash.substring(1).split("&");
+        for (var i = 0; i < urlParams.length; ++i) {
+            var str = decodeURI(urlParams[i]);
+            console.log(str);
+            // URL load param
+            if (str.startsWith("url=")) {
+                await fetch(str.substring(4))
+                    .then(function (response) {
+                        if (response.status === 200 || response.status === 0) {
+                            return Promise.resolve(response.text());
+                        } else {
+                            return Promise.reject(new Error(response.statusText));
+                        }
+                    })
+                    .then(text => loadURLList(text.split("\n")));
+                continue;
+            }
+        }
+    }
 
     // Setup camera and camera controls
     var camera = new ArcballCamera(
@@ -108,8 +136,7 @@ var volValueRange = [0, 1];
         return promise
     };
 
-    var tstep = 0;
-    var frame = 0;
+    var timestepDisplay = document.getElementById("current-timestep");
     requestAnimationFrame(animationFrame);
     while (true) {
         await animationFrame();
@@ -128,11 +155,13 @@ var volValueRange = [0, 1];
         var eye = [camera.invCamera[12], camera.invCamera[13], camera.invCamera[14]];
         gl.uniform3fv(shader.uniforms["eye_pos"], eye);
 
-        if (frame % 6 == 0) {
-            //console.log(`frame = ${frame}, tstep = ${tstep}, # loaded = ${timesteps.length}`);
+        var currentStack = timesteps[parseInt(timestepSlider.value)];
+        if (playing && frame % 6 == 0) {
+            timestepSlider.value = (parseInt(timestepSlider.value) + 1) % timesteps.length;
+
+            currentStack = timesteps[parseInt(timestepSlider.value)];
             gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_3D, timesteps[tstep]);
-            tstep = (tstep + 1) % timesteps.length;
+            gl.bindTexture(gl.TEXTURE_3D, currentStack.texture);
         }
         gl.uniform1i(shader.uniforms["volume"], 0);
         gl.uniform1i(shader.uniforms["colormap"], 1);
@@ -140,31 +169,40 @@ var volValueRange = [0, 1];
         gl.uniform1f(shader.uniforms["threshold"], volumeThreshold.value);
         gl.uniform1f(shader.uniforms["saturation_threshold"], saturationThreshold.value);
 
-        var longestAxis = Math.max(volumeDims[0], Math.max(volumeDims[1], volumeDims[2]));
+        var longestAxis =
+            Math.max(currentStack.volumeDims[0],
+                Math.max(currentStack.volumeDims[1], currentStack.volumeDims[2]));
         var volumeScale = [
-            volumeDims[0] / longestAxis,
-            volumeDims[1] / longestAxis,
-            volumeDims[2] / longestAxis
+            currentStack.volumeDims[0] / longestAxis,
+            currentStack.volumeDims[1] / longestAxis,
+            currentStack.volumeDims[2] / longestAxis
         ];
 
-        gl.uniform3iv(shader.uniforms["volume_dims"], volumeDims);
+        gl.uniform3iv(shader.uniforms["volume_dims"], currentStack.volumeDims);
         gl.uniform3fv(shader.uniforms["volume_scale"], volumeScale);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, cubeStrip.length / 3);
         gl.finish();
 
-        frame += 1;
+        timestepDisplay.innerText = `Current Timestep: ${timestepSlider.value}`;
+
+        if (playing) {
+            frame += 1;
+        }
     }
 })();
 
-async function uploadZip(evt) {
+async function loadZipFile(evt) {
     // Delete the old time series
     if (timesteps.length > 0) {
-        var oldTimesteps = timesteps;
+        var old = timesteps;
         timesteps = [];
-        for (var i = 0; i < oldTimesteps.length; ++i) {
-            gl.deleteTexture(oldTimesteps[i]);
+        for (var i = 0; i < old.length; ++i) {
+            old[i].deleteTexture(gl);
         }
+        timestepSlider.value = 0;
+        frame = 1;
+        timestepSlider.max = 0;
     }
 
     var files = evt.target.files;
@@ -173,77 +211,99 @@ async function uploadZip(evt) {
         return;
     }
 
-    // TODO: Handle multiple files if multiple timesteps uploaded
-    // Here we'd want something more intelligent to load on demand and play though
-    // the textures, but this is fine for a test
-    for (var f = 0; f < files.length; ++f) {
-        //console.log(files[f]);
-        var start = performance.now();
-        var zip = await JSZip.loadAsync(files[f]);
-        var slices = zip.file(/\.webp/);
-
-        // Load the first slice to determine the volume dimensions
-        var buf = await slices[0].async("arraybuffer");
-        var blob = new Blob([buf], ["image/webp"]);
-        var img = await createImageBitmap(blob);
-
-        volumeDims = [img.width, img.height, slices.length];
-        //console.log(volumeDims);
-
-        var uploadTexture = gl.createTexture();
-        // Upload on texture unit 2
-        gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_3D, uploadTexture);
-        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-        gl.texStorage3D(gl.TEXTURE_3D, 1, gl.R8, volumeDims[0], volumeDims[1], volumeDims[2]);
-        gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-
-        // Write the first slice, since we've already loaded it
-        gl.texSubImage3D(gl.TEXTURE_3D,
-            0,
-            0,
-            0,
-            0,
-            volumeDims[0],
-            volumeDims[1],
-            1,
-            gl.RED,
-            gl.UNSIGNED_BYTE,
-            img);
-
-        var uploadSlice = async function (i) {
-            var buf = await slices[i].async("arraybuffer");
-            var blob = new Blob([buf], ["image/webp"]);
-            var img = await createImageBitmap(blob);
-            gl.activeTexture(gl.TEXTURE2);
-            gl.texSubImage3D(gl.TEXTURE_3D,
-                0,
-                0,
-                0,
-                i,
-                volumeDims[0],
-                volumeDims[1],
-                1,
-                gl.RED,
-                gl.UNSIGNED_BYTE,
-                img);
-            img.close();
-        };
-
-        // Now upload the other slices asynchronously
-        var promises = [];
-        for (var i = 1; i < slices.length; ++i) {
-            promises.push(uploadSlice(i));
+    if (files[0].type === "application/zip" || files[0].type === "application/x-zip-compressed") {
+        // Here we'd want something more intelligent to load on demand and play though
+        // the textures, but this is fine for a test
+        for (var i = 0; i < files.length; ++i) {
+            console.log(files[i]);
+            var timestep = new ZipStack(files[i]);
+            await timestep.uploadToGPU(gl, 2);
+            timesteps.push(timestep);
         }
-        // Wait for all slices to finish
-        await Promise.all(promises);
-
-        var end = performance.now();
-        console.log(`Volume loaded in ${end - start}ms`);
-        timesteps.push(uploadTexture);
+    } else if (files[0].type === "text/plain") {
+        var content = await files[0].text();
+        await loadURLList(content.split("\n"));
+    } else {
+        alert(`Unsupported file type ${files[0].type}`);
     }
+
+    timestepSlider.max = timesteps.length - 1;
+}
+
+async function loadURLList(lines) {
+    for (var i = 0; i < lines.length; ++i) {
+        console.log(lines[i]);
+        if (lines[i].length == 0) {
+            continue;
+        }
+        var timestep = new ZipStack(lines[i]);
+        await timestep.uploadToGPU(gl, 2);
+        timesteps.push(timestep);
+    }
+    timestepSlider.max = timesteps.length - 1;
+}
+
+// Setup the animation playback controls
+function setupPlaybackControls() {
+    document.getElementById("restart-button").onclick = function () {
+        timestepSlider.value = 0;
+        frame = 1;
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_3D, timesteps[parseInt(timestepSlider.value)].texture);
+    };
+
+    document.getElementById("step-backward").onclick = function () {
+        if (timesteps.length == 0) {
+            return;
+        }
+        var val = parseInt(timestepSlider.value);
+        if (val == 0) {
+            timestepSlider.value = timesteps.length - 1;
+        } else {
+            timestepSlider.value = val - 1;
+        }
+        frame = 1;
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_3D, timesteps[parseInt(timestepSlider.value)].texture);
+    };
+
+    var playButton = document.getElementById("play-button");
+    var pauseButton = document.getElementById("pause-button");
+    playButton.hidden = true;
+
+    playButton.onclick = function () {
+        playing = true;
+        frame = 1;
+
+        playButton.hidden = true;
+        pauseButton.hidden = false;
+    };
+
+    pauseButton.onclick = function () {
+        playing = false;
+        frame = 1;
+
+        playButton.hidden = false;
+        pauseButton.hidden = true;
+    };
+
+    document.getElementById("step-forward").onclick = function () {
+        if (timesteps.length == 0) {
+            return;
+        }
+        timestepSlider.value = (parseInt(timestepSlider.value) + 1) % timesteps.length;
+        frame = 1;
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_3D, timesteps[parseInt(timestepSlider.value)].texture);
+    };
+
+    timestepSlider.oninput = function (e) {
+        frame = 1;
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_3D, timesteps[parseInt(timestepSlider.value)].texture);
+    };
 }
