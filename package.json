@@ -4,7 +4,7 @@
   "description": "Fantastic volumetric projection animation package developed by Will Usher. Forked to make modifications to frame rate and intensity sliders.",
   "main": "app.js",
   "scripts": {
-    "build": "webpack --mode=production",
+    "build": "webpack",
     "serve": "webpack server",
     "deploy": "webpack --mode=production",
     "start": "webpack-dev-server --port 8081"
@@ -21,15 +21,16 @@
   },
   "homepage": "https://github.com/Twinklebear/webgl-volume-animation#readme",
   "devDependencies": {
-    "html-webpack-plugin": "^5.3.2",
-    "webpack": "^5.53.0",
-    "webpack-cli": "^4.8.0",
-    "webpack-dev-server": "^4.2.1"
+    "html-webpack-plugin": "^5.5.0",
+    "webpack": "^5.74.0",
+    "webpack-cli": "^4.10.0",
+    "webpack-dev-server": "^4.11.0"
   },
   "dependencies": {
     "arcball_camera": "^1.0.1",
     "ez_canvas_controller": "^1.0.0",
     "gl-matrix": "^3.4.3",
-    "jszip": "^3.9.1"
+    "jszip": "^3.10.1",
+    "wasm-flate": "1.0.2-browser"
   }
 }
