@@ -22,21 +22,6 @@ var frame = 1;
 var playing = true;
 var timestepSlider = document.getElementById("timestep-slider");
 var volValueRange = [0, 1];
-loadFileList();
-
-
-async function loadFileList() {
-    const fileList = "./files.txt"
-    const fileRequest = await fetch(fileList);
-
-    if( fileRequest.status === 200) {
-        const content = await fileRequest.text();
-        await loadURLList(content.split("\n"));
-    } else {
-        console.log(fileRequest.status)
-    }
-    
-}
 
 (async () => {
     var canvas = document.getElementById("webgl-canvas");
@@ -46,6 +31,8 @@ async function loadFileList() {
         document.getElementById("no-webgl").setAttribute("style", "display:block;");
         return;
     }
+
+    document.getElementById("upload-zip").onchange = loadZipFile;
 
     setupPlaybackControls();
 
@@ -228,6 +215,7 @@ async function loadZipFile(evt) {
         // Here we'd want something more intelligent to load on demand and play though
         // the textures, but this is fine for a test
         for (var i = 0; i < files.length; ++i) {
+            console.log(files[i]);
             var timestep = new ZipStack(files[i]);
             await timestep.uploadToGPU(gl, 2);
             timesteps.push(timestep);
@@ -244,13 +232,11 @@ async function loadZipFile(evt) {
 
 async function loadURLList(lines) {
     for (var i = 0; i < lines.length; ++i) {
-        const line = lines[i].replace(`\r`, "");
-
-        if (line.length == 0) {
+        console.log(lines[i]);
+        if (lines[i].length == 0) {
             continue;
         }
-
-        var timestep = new ZipStack(line);
+        var timestep = new ZipStack(lines[i]);
         await timestep.uploadToGPU(gl, 2);
         timesteps.push(timestep);
     }
