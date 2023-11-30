@@ -1,4 +1,4 @@
-# WebGL Volume Animation
+npm# WebGL Volume Animation
 
 Play back 3D volumetric time series data
 

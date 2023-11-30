@@ -13,4 +13,3 @@ export const colormaps = {
     "Samsel Linear Green": samselGreen,
     "Samsel Linear YGB 1211G": samselYgb,
 };
-
